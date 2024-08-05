@@ -107,7 +107,6 @@
         if ($NoClobber) { Write-Warning -Message "-NoClobber parameter is no longer used" }
         #Open the file, get the worksheet, and decide where in the sheet we are writing, and if there is a number format to apply.
         try {
-            $Script:Header = $null
             if ($Append -and $ClearSheet) { throw "You can't use -Append AND -ClearSheet." ; return }
             #To force -Now not to format as a table, allow $false in -TableName to be "No table"
             $TableName = if ($null -eq $TableName -or ($TableName -is [bool] -and $false -eq $TableName)) { $null } else { [String]$TableName }
@@ -144,7 +143,7 @@
                 #if there is a title or anything else above the header row, append needs to be combined wih a suitable startrow parameter
                 $headerRange = $ws.Dimension.Address -replace "\d+$", $StartRow
                 #using a slightly odd syntax otherwise header ends up as a 2D array
-                $ws.Cells[$headerRange].Value | ForEach-Object -Begin { $Script:header = @() } -Process { $Script:header += $_ }
+                $ws.Cells[$headerRange].Value | ForEach-Object -Begin { $Script:Header = @() } -Process { $Script:Header += $_ }
                 $NoHeader = $true
                 #if we did not get AutoNameRange, but headers have ranges of the same name make autoNameRange True, otherwise make it false
                 if (-not $AutoNameRange) {
@@ -258,7 +257,7 @@
             $null = $PSBoundParameters.Remove('InputObject')
             $firstTimeThru = $false
         }
-        elseif (($null -ne $InputObject) -and ($null -ne $InputObject.GetType().GetInterface("IDataReader")) ) {
+        elseif ($InputObject -is [System.Data.IDataReader]) {
             $dbReaderFieldCount = $InputObject.FieldCount
 
             # get datatype vales before looping to end of reader
@@ -308,7 +307,7 @@
                 }
             }
             
-            $ColumnIndex = $Script:Header.Count
+            $ColumnIndex = $dbReaderFieldCount
             if ($noHeader) { $row = $ws.Dimension.End.Row - 1 }
             else { $row = $ws.Dimension.End.Row }
             $null = $PSBoundParameters.Remove('InputObject')
@@ -357,16 +356,16 @@
                             }
                         }
                         #endregion
-                        #region Add non header values
+
+                        #region Add databody values
                         $row++
                         $ColumnIndex = $StartColumn
-                        <#
-                     For each item in the header OR for the Data item if this is a simple Type or data table :
-                       If it is a date insert with one of Excel's built in formats - recognized as "Date and time to be localized"
-                       if it is a TimeSpan insert with a built in format for elapsed hours, minutes and seconds
-                       if its  any other numeric insert as is , setting format if need be.
-                       Preserve URI, Insert a data table, convert non string objects to string.
-                       For strings, check for fomula, URI or Number, before inserting as a string  (ignore nulls) #>
+                        <# For each item in the header OR for the Data item if this is a simple Type or data table :
+                        If it is a date insert with one of Excel's built in formats - recognized as "Date and time to be localized"
+                        if it is a TimeSpan insert with a built in format for elapsed hours, minutes and seconds
+                        if its  any other numeric insert as is , setting format if need be.
+                        Preserve URI, Insert a data table, convert non string objects to string.
+                        For strings, check for fomula, URI or Number, before inserting as a string  (ignore nulls) #>
                         foreach ($Name in $Script:Header) {
                             if ($isDataTypeValueType) { $v = $TargetData }
                             else { $v = $TargetData.$Name }
@@ -428,17 +427,19 @@
                                 }
                             }
                             catch { Write-Warning -Message "Could not insert the '$Name' property at Row $row, Column $ColumnIndex" }
+
                             $ColumnIndex++
                         }
                         #endregion
                     }
                 }
-                elseif ( ($null -ne $InputObject) -and ($null -ne $InputObject.GetType().GetInterface("IDataRecord") ) ) {
+                elseif ( $InputObject -is [System.Data.IDataRecord] ) {
                     # get field names the first time around
                     if ($firstTimeThru) {
                         $firstTimeThru = $false
                         $Script:Header = @()
-                        for ($j = 0; $j -lt $InputObject.FieldCount; $j++) {
+                        $dbReaderFieldCount = $InputObject.FieldCount
+                        for ($j = 0; $j -lt $dbReaderFieldCount; $j++) {
                             $Script:Header += $InputObject.GetName($j)
                         }
 
@@ -468,7 +469,7 @@
                         #endregion
                     }
 
-                    #region Add non header values
+                    #region Add databody values
                     $row++
                     $ColumnIndex = $StartColumn
                     <#
@@ -481,113 +482,113 @@
                     foreach ($Name in $Script:Header) {
                         $j = $InputObject.GetOrdinal($Name)
 
-                        $fieldType = $InputObject.GetFieldType($j)
-                        $fieldValue = $null
-
                         try {
-                            switch ($fieldType) {
-                                { $_ -is [Int32] } {
-                                    $fieldValue = $InputObject.GetInt32($j); break
-                                }
-                                { $_ -is [String] } {
-                                    $fieldValue = $InputObject.GetString($j); break
-                                }
-                                { $_ -is [Boolean] } {
-                                    $fieldValue = $InputObject.GetBoolean($j); break
-                                }
-                                { $_ -is [DateTime] } {
-                                    $fieldValue = $InputObject.GetDateTime($j); break
-                                }
-                                { $_ -is [TimeSpan] } {
-                                    $fieldValue = [TimeSpan]$InputObject.GetValue($j); break
-                                }
-                                { $_ -is [Decimal] } {
-                                    $fieldValue = $InputObject.GetDecimal($j); break
-                                }
-                                { $_ -is [Double] } {
-                                    $fieldValue = $InputObject.GetDouble($j); break
-                                }
-                                { $_ -is [Boolean] } {
-                                    $fieldValue = $InputObject.GetBoolean($j); break
-                                }
-                                { $_ -is [Float] } {
-                                    $fieldValue = $InputObject.GetFloat($j); break
-                                }
-                                { $_ -is [Single] } {
-                                    $fieldValue = $InputObject.GetFloat($j); break
-                                }
-                                { $_ -is [Int64] } {
-                                    $fieldValue = $InputObject.GetInt64($j); break
-                                }
-                                { $_ -is [Int16] } {
-                                    $fieldValue = $InputObject.GetInt16($j); break
-                                }
-                                { $_ -is [Byte] } {
-                                    $fieldValue = [int]$InputObject.GetByte($j); break
-                                }
-                                { $_ -is [Char] } {
-                                    $fieldValue = $InputObject.GetChar($j).ToString(); break
-                                }
-                                { $_ -is [Guid] } {
-                                    $fieldValue = $InputObject.GetGuid($j).ToString(); break
-                                }
-                                { $_ -is [Object] } {
-                                    $fieldValue = $InputObject.GetValue($j); break
-                                }
-                                default {
-                                    throw "Unsupported field type: $($fieldType.FullName)"
-                                }
-                            }
+                            if (!$InputObject.IsDBNull($j)) {
+                                $fieldType = $InputObject.GetFieldType($j)
+                                $fieldValue = $null 
 
-                            if ($InputObject.IsDBNull($j)) { $fieldValue = $null }
-
-                            if ($fieldType -is [DateTime]) {
-                                $ws.Cells[$row, $ColumnIndex].Value = $fieldValue
-                                $ws.Cells[$row, $ColumnIndex].Style.Numberformat.Format = 'm/d/yy h:mm' # This is not a custom format, but a preset recognized as date and localized.
-                            }
-                            elseif ($fieldType -is [TimeSpan]) {
-                                $ws.Cells[$row, $ColumnIndex].Value = $fieldValue
-                                $ws.Cells[$row, $ColumnIndex].Style.Numberformat.Format = '[h]:mm:ss'
-                            }
-                            elseif ($fieldType -is [System.ValueType]) {
-                                $ws.Cells[$row, $ColumnIndex].Value = $fieldValue
-                                if ($setNumformat) { $ws.Cells[$row, $ColumnIndex].Style.Numberformat.Format = $Numberformat }
-                            }
-                            elseif ($fieldType -isnot [String] -or $null -eq $fieldValue ) {
-                                #Other objects or null.
-                                if ($null -ne $fieldValue ) { $ws.Cells[$row, $ColumnIndex].Value = $fieldValue.ToString() }
-                            }
-                            elseif ($fieldValue[0] -eq '=') {
-                                $ws.Cells[$row, $ColumnIndex].Formula = ($fieldValue -replace '^=', '')
-                                if ($setNumformat) { $ws.Cells[$row, $ColumnIndex].Style.Numberformat.Format = $Numberformat }
-                            }
-                            else {
-                                if ( $NoHyperLinkConversion -ne '*' -and # Put the check for 'NoHyperLinkConversion is null' first to skip checking for wellformedstring
-                                    $NoHyperLinkConversion -notcontains $Name -and
-                                    [System.Uri]::IsWellFormedUriString($fieldValue, [System.UriKind]::Absolute)
-                                ) { 
-                                    if ($fieldValue -match "^xl://internal/") {
-                                        $referenceAddress = $fieldValue -replace "^xl://internal/" , ""
-                                        $display = $referenceAddress -replace "!A1$"   , ""
-                                        $h = New-Object -TypeName OfficeOpenXml.ExcelHyperLink -ArgumentList $referenceAddress , $display
-                                        $ws.Cells[$row, $ColumnIndex].HyperLink = $h
+                                switch ($fieldType) {
+                                    { $_ -is [Int32] } {
+                                        $fieldValue = $InputObject.GetInt32($j); break
                                     }
-                                    else { $ws.Cells[$row, $ColumnIndex].HyperLink = $fieldValue }
-                                    $ws.Cells[$row, $ColumnIndex].Style.Font.Color.SetColor([System.Drawing.Color]::Blue)
-                                    $ws.Cells[$row, $ColumnIndex].Style.Font.UnderLine = $true
+                                    { $_ -is [String] } {
+                                        $fieldValue = $InputObject.GetString($j); break
+                                    }
+                                    { $_ -is [Boolean] } {
+                                        $fieldValue = $InputObject.GetBoolean($j); break
+                                    }
+                                    { $_ -is [DateTime] } {
+                                        $fieldValue = $InputObject.GetDateTime($j); break
+                                    }
+                                    { $_ -is [TimeSpan] } {
+                                        $fieldValue = [TimeSpan]$InputObject.GetValue($j); break
+                                    }
+                                    { $_ -is [Decimal] } {
+                                        $fieldValue = $InputObject.GetDecimal($j); break
+                                    }
+                                    { $_ -is [Double] } {
+                                        $fieldValue = $InputObject.GetDouble($j); break
+                                    }
+                                    { $_ -is [Boolean] } {
+                                        $fieldValue = $InputObject.GetBoolean($j); break
+                                    }
+                                    { $_ -is [Float] } {
+                                        $fieldValue = $InputObject.GetFloat($j); break
+                                    }
+                                    { $_ -is [Single] } {
+                                        $fieldValue = $InputObject.GetFloat($j); break
+                                    }
+                                    { $_ -is [Int64] } {
+                                        $fieldValue = $InputObject.GetInt64($j); break
+                                    }
+                                    { $_ -is [Int16] } {
+                                        $fieldValue = $InputObject.GetInt16($j); break
+                                    }
+                                    { $_ -is [Byte] } {
+                                        $fieldValue = [int]$InputObject.GetByte($j); break
+                                    }
+                                    { $_ -is [Char] } {
+                                        $fieldValue = $InputObject.GetChar($j).ToString(); break
+                                    }
+                                    { $_ -is [Guid] } {
+                                        $fieldValue = $InputObject.GetGuid($j).ToString(); break
+                                    }
+                                    { $_ -is [Object] } {
+                                        $fieldValue = $InputObject.GetValue($j); break
+                                    }
+                                    default {
+                                        throw "Unsupported field type: $($fieldType.FullName)"
+                                    }
+                                }
+
+                                if ($fieldValue -is [DateTime]) {
+                                    $ws.Cells[$row, $ColumnIndex].Value = $fieldValue
+                                    $ws.Cells[$row, $ColumnIndex].Style.Numberformat.Format = 'm/d/yy h:mm' # This is not a custom format, but a preset recognized as date and localized.
+                                }
+                                elseif ($fieldValue -is [TimeSpan]) {
+                                    $ws.Cells[$row, $ColumnIndex].Value = $fieldValue
+                                    $ws.Cells[$row, $ColumnIndex].Style.Numberformat.Format = '[h]:mm:ss'
+                                }
+                                elseif ($fieldValue -is [System.ValueType]) {
+                                    $ws.Cells[$row, $ColumnIndex].Value = $fieldValue
+                                    if ($setNumformat) { $ws.Cells[$row, $ColumnIndex].Style.Numberformat.Format = $Numberformat }
+                                }
+                                elseif ($fieldValue -isnot [String]) {
+                                    # Other objects
+                                    $ws.Cells[$row, $ColumnIndex].Value = $fieldValue.ToString()
+                                }
+                                elseif ($fieldValue[0] -eq '=') {
+                                    $ws.Cells[$row, $ColumnIndex].Formula = ($fieldValue -replace '^=', '')
+                                    if ($setNumformat) { $ws.Cells[$row, $ColumnIndex].Style.Numberformat.Format = $Numberformat }
                                 }
                                 else {
-                                    $number = $null
-                                    if ( $NoNumberConversion -ne '*' -and # Check if NoNumberConversion isn't specified. Put this first as it's going to stop the if clause. Quicker than putting regex check first
-                                        $numberRegex.IsMatch($fieldValue) -and # and if it contains digit(s) - this syntax is quicker than -match for many items and cuts out slow checks for non numbers
-                                        $NoNumberConversion -notcontains $Name -and
-                                        [Double]::TryParse($fieldValue, [System.Globalization.NumberStyles]::Any, [System.Globalization.NumberFormatInfo]::CurrentInfo, [Ref]$number)
-                                    ) {
-                                        $ws.Cells[$row, $ColumnIndex].Value = $number
-                                        if ($setNumformat) { $ws.Cells[$row, $ColumnIndex].Style.Numberformat.Format = $Numberformat }
+                                    if ( $NoHyperLinkConversion -ne '*' -and # Put the check for 'NoHyperLinkConversion is null' first to skip checking for wellformedstring
+                                        $NoHyperLinkConversion -notcontains $Name -and
+                                        [System.Uri]::IsWellFormedUriString($fieldValue, [System.UriKind]::Absolute)
+                                    ) { 
+                                        if ($fieldValue -match "^xl://internal/") {
+                                            $referenceAddress = $fieldValue -replace "^xl://internal/" , ""
+                                            $display = $referenceAddress -replace "!A1$"   , ""
+                                            $h = New-Object -TypeName OfficeOpenXml.ExcelHyperLink -ArgumentList $referenceAddress , $display
+                                            $ws.Cells[$row, $ColumnIndex].HyperLink = $h
+                                        }
+                                        else { $ws.Cells[$row, $ColumnIndex].HyperLink = $fieldValue }
+                                        $ws.Cells[$row, $ColumnIndex].Style.Font.Color.SetColor([System.Drawing.Color]::Blue)
+                                        $ws.Cells[$row, $ColumnIndex].Style.Font.UnderLine = $true
                                     }
                                     else {
-                                        $ws.Cells[$row, $ColumnIndex].Value = $fieldValue
+                                        $number = $null
+                                        if ( $NoNumberConversion -ne '*' -and # Check if NoNumberConversion isn't specified. Put this first as it's going to stop the if clause. Quicker than putting regex check first
+                                            $numberRegex.IsMatch($fieldValue) -and # and if it contains digit(s) - this syntax is quicker than -match for many items and cuts out slow checks for non numbers
+                                            $NoNumberConversion -notcontains $Name -and
+                                            [Double]::TryParse($fieldValue, [System.Globalization.NumberStyles]::Any, [System.Globalization.NumberFormatInfo]::CurrentInfo, [Ref]$number)
+                                        ) {
+                                            $ws.Cells[$row, $ColumnIndex].Value = $number
+                                            if ($setNumformat) { $ws.Cells[$row, $ColumnIndex].Style.Numberformat.Format = $Numberformat }
+                                        }
+                                        else {
+                                            $ws.Cells[$row, $ColumnIndex].Value = $fieldValue
+                                        }
                                     }
                                 }
                             }
@@ -611,7 +612,7 @@
         }
         else {
             $LastRow = $row
-            $LastCol = $ColumnIndex
+            if ($PSCmdlet.MyInvocation.ExpectingInput) { $LastCol = ($ColumnIndex -= 1) } else { $LastCol = $ColumnIndex }
             $endAddress = [OfficeOpenXml.ExcelAddress]::GetAddress($LastRow , $LastCol)
         }
         $startAddress = [OfficeOpenXml.ExcelAddress]::GetAddress($StartRow, $StartColumn)
@@ -620,11 +621,11 @@
         Write-Debug "Data Range '$dataRange'"
         if ($AutoNameRange) {
             try {
-                if (-not $Script:header) {
+                if (-not $Script:Header) {
                     # if there aren't any headers, use the the first row of data to name the ranges: this is the last point that headers will be used.
                     $headerRange = $ws.Dimension.Address -replace "\d+$", $StartRow
                     #using a slightly odd syntax otherwise header ends up as a 2D array
-                    $ws.Cells[$headerRange].Value | ForEach-Object -Begin { $Script:header = @() } -Process { $Script:header += $_ }
+                    $ws.Cells[$headerRange].Value | ForEach-Object -Begin { $Script:Header = @() } -Process { $Script:Header += $_ }
                     if ($PSBoundParameters.ContainsKey($TargetData)) {
                         #if Export was called with data that writes no header start the range at $startRow ($startRow is data)
                         $targetRow = $StartRow
@@ -659,7 +660,7 @@
         #Allow table to be inserted by specifying Name, or Style or both; only process autoFilter if there is no table (they clash).
         if ($null -ne $TableName -or $PSBoundParameters.ContainsKey('TableStyle')) {
             #Already inserted Excel table if input was a DataTable or an IDataReader
-            if (($null -ne $InputObject) -and ( ( $InputObject -isnot [System.Data.DataTable] ) -or ($null -eq $InputObject.GetType().GetInterface("IDataReader")) -or ($null -eq $InputObject.GetType().GetInterface("IDataRecord")) ) ) {
+            if ( ($InputObject -isnot [System.Data.DataTable]) -and ($InputObject -isnot [System.Data.IDataReader]) -and ($InputObject -isnot [System.Data.IDataRecord]) ) {
                 Add-ExcelTable -Range $ws.Cells[$dataRange] -TableName $TableName -TableStyle $TableStyle -TableTotalSettings $TableTotalSettings
             }
         }
