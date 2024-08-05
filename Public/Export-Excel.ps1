@@ -213,7 +213,7 @@
         <# If inputObject was passed via the pipeline it won't be visible until the process block, we will only see it here if it was passed as a parameter
           if it is a data table or an IDataReader, don't do foreach on it (slow) - put the whole table in and set dates on date columns,
           set things up for the end block, and skip the process block #>
-        if ( ($null -ne $InputObject) -and $InputObject.GetType() -is [System.Data.DataTable] ) {
+        if ($InputObject -is [System.Data.DataTable]) {
             if ($Append -and $ws.dimension) {
                 $row++
                 $null = $ws.Cells[$row, $StartColumn].LoadFromDataTable($InputObject, $false )
@@ -321,7 +321,7 @@
         if ($PSBoundParameters.ContainsKey("InputObject")) {
             try {
                 if ($null -eq $InputObject) { $row++ }
-                if ( ($null -ne $InputObject) -and $InputObject.GetType() -is [System.Data.DataTable] ) {                    
+                if ( $InputObject -is [System.Data.DataRow] ) {                    
                     $isDataTypeValueType = $false
                     foreach ($TargetData in $InputObject) {
                         if ($firstTimeThru) {
@@ -659,7 +659,7 @@
         #Allow table to be inserted by specifying Name, or Style or both; only process autoFilter if there is no table (they clash).
         if ($null -ne $TableName -or $PSBoundParameters.ContainsKey('TableStyle')) {
             #Already inserted Excel table if input was a DataTable or an IDataReader
-            if (($null -ne $InputObject) -and ( ( $InputObject.GetType() -isnot [System.Data.DataTable] ) -or ($null -eq $InputObject.GetType().GetInterface("IDataReader")) -or ($null -eq $InputObject.GetType().GetInterface("IDataRecord")) ) ) {
+            if (($null -ne $InputObject) -and ( ( $InputObject -isnot [System.Data.DataTable] ) -or ($null -eq $InputObject.GetType().GetInterface("IDataReader")) -or ($null -eq $InputObject.GetType().GetInterface("IDataRecord")) ) ) {
                 Add-ExcelTable -Range $ws.Cells[$dataRange] -TableName $TableName -TableStyle $TableStyle -TableTotalSettings $TableTotalSettings
             }
         }
